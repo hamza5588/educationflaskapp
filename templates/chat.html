@@ -5,6 +5,13 @@
 
 {% block content %}
 <div class="max-w-4xl mx-auto">
+    <div class="user-info bg-gray-100 p-4 rounded-lg mb-4">
+        <h3 class="text-lg font-bold">Welcome, {{ user.name }}</h3>
+        <p>Grade: {{ user.grade }}</p>
+        <p>School: {{ user.school }}</p>
+        <p>Medium: {{ user.medium }}</p>
+    </div>
+
     <div class="chat-container">
         <div class="messages-container" id="chat-messages">
             <!-- Messages will be inserted here via JavaScript -->
