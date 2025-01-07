@@ -200,6 +200,11 @@ import sqlite3
 import hashlib
 from datetime import datetime
 from langchain_google_genai import ChatGoogleGenerativeAI
+import io
+import os
+import speech_recognition as sr
+from gtts import gTTS
+from playsound import playsound
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Change this to a secure secret key
@@ -305,6 +310,53 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# Speech-to-Text function
+def recognize_speech():
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("Listening...")
+        recognizer.adjust_for_ambient_noise(source)
+        audio = recognizer.listen(source)
+
+    try:
+        print("Recognizing...")
+        text = recognizer.recognize_google(audio)
+        print(f"You said: {text}")
+        return text
+    except sr.UnknownValueError:
+        print("Could not understand audio")
+        return ""
+    except sr.RequestError as e:
+        print(f"Error with the speech recognition service; {e}")
+        return ""
+
+# Text-to-Speech function
+def speak_text(text, filename="response.mp3"):
+    try:
+        tts = gTTS(text=text, lang='en')
+        tts.save(filename)
+        playsound(filename)
+    except Exception as e:
+        print(f"Error in text-to-speech: {e}")
+
+# # Gemini Interaction
+# def generate_response(user_message):
+#     """Generates a response using the Gemini model."""
+#     llm = ChatGoogleGenerativeAI(
+#         model="gemini-1.5-pro",
+#         google_api_key=session['user']['api_key'],
+#         temperature=0.5,
+#         max_tokens=150,
+#         timeout=10,
+#         max_retries=1
+#     )
+    
+#     try:
+#         response = llm.invoke(user_message)
+#         return response.content
+#     except Exception as e:
+#         print(f"Error generating response from Gemini: {e}")
+#         return "I'm sorry, I encountered an error."
 # Routes
 @app.route('/')
 def index():
@@ -355,91 +407,197 @@ def signup():
 def chat():
     return render_template('chat.html', user=session['user'])
 
-@app.route('/send_message', methods=['POST'])
-@login_required
-def send_message():
-    data = request.json
-    user_message = data.get('message')
+# @app.route('/send_message', methods=['POST'])
+# @login_required
+# def send_message():
+#     data = request.json
+#     user_message = data.get('message')
     
-    if user_message:
+#     if user_message:
+#         generated_response = generate_response(user_message)
+#         validation_result = validate_with_ai(user_message, generated_response)
+#         save_chat_history(session['user']['email'], user_message, generated_response, validation_result)
+
+#         return jsonify({
+#             'status': 'success',
+#             'response': generated_response,
+#             'validation': validation_result
+#         })
+    
+#     return jsonify({
+#         'status': 'error',
+#         'message': 'No message provided'
+#     })
+# First, let's modify the generate_response function to handle prompt templates
+def generate_response(user_message, prompt_template=None):
+    """Generates a response using the Gemini model."""
+    try:
         llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-pro",
             google_api_key=session['user']['api_key'],
-            temperature=0.5,  # Adjust temperature for more human-like randomness
+            temperature=0.7,
             max_tokens=150,
             timeout=10,
             max_retries=1
         )
         
-        user_context = {
-            "name": session['user']['name'],
-            "grade": session['user'].get('grade'),
-            "medium": session['user'].get('medium'),
-            "school": session['user'].get('school')
-        }
+        # Construct the full message
+        if prompt_template and prompt_template.strip():
+            full_message = f"{prompt_template.strip()}\n\nUser Input: {user_message}"
+            print(f"Using prompt template: {full_message}")  # Debug log
+        else:
+            full_message = user_message
+            print("No prompt template used")  # Debug log
+        
+        print(f"Sending message to Gemini: {full_message}")  # Debug log
+        
+        response = llm.invoke(full_message)
+        return response.content
+    except Exception as e:
+        print(f"Error generating response from Gemini: {e}")  # Debug log
+        return f"I'm sorry, I encountered an error: {str(e)}"
 
-        # Include context in the prompt
-        full_message = (
-            f"You are an AI assistant for students. Your goal is to be conversational and friendly.\n"
-            f"Student Name: {user_context['name']}\n"
-            f"Grade: {user_context['grade']}\n"
-            f"Medium: {user_context['medium']}\n"
-            f"School: {user_context['school']}\n"
-            f"Message from {user_context['name']}: {user_message}\n"
-            f"Respond like a friendly and knowledgeable assistant."
-        )
-
-        try:
-            response = llm.invoke(full_message)
-            generated_response = response.content
-
-            # Validate the response using the Checker Agent
-            validation_result = validate_with_ai(user_message, generated_response)
-
-            # Save conversation and validation result to the database
-            save_chat_history(session['user']['email'], user_message, generated_response, validation_result)
-
-            return jsonify({
-                'status': 'success',
-                'response': generated_response,
-                'validation': validation_result
-            })
-        except Exception as e:
-            return jsonify({
-                'status': 'error',
-                'message': str(e)
-            })
-    
-    return jsonify({
-        'status': 'error',
-        'message': 'No message provided'
-    })
-
-
-@app.route('/history', methods=['GET'])
+@app.route('/send_message', methods=['POST'])
 @login_required
-def get_history():
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute("SELECT message, response, validation, timestamp FROM chat_history WHERE user_email=? ORDER BY timestamp DESC", 
-              (session['user']['email'],))
-    history = c.fetchall()
-    conn.close()
-    return jsonify(history)
+def send_message():
+    try:
+        data = request.json
+        user_message = data.get('message')
+        prompt_template = data.get('promptTemplate')
+        
+        print(f"Received message: {user_message}")  # Debug log
+        print(f"Received prompt template: {prompt_template}")  # Debug log
 
-@app.route('/update_api_key', methods=['POST'])
+        if not user_message:
+            return jsonify({'status': 'error', 'message': 'No message provided'})
+
+        # Generate response with the prompt template
+        generated_response = generate_response(user_message, prompt_template)
+        print(f"Generated response: {generated_response}")  # Debug log
+        
+        # Save chat history
+        save_chat_history(session['user']['email'], user_message, generated_response)
+
+        # Generate audio response
+        audio_filename = f"response_{session['user']['email']}.mp3"
+        audio_path = f"static/{audio_filename}"
+        
+        # Make sure the static directory exists
+        os.makedirs('static', exist_ok=True)
+        
+        # Generate the audio file
+        speak_text(generated_response, filename=audio_path)
+
+        return jsonify({
+            'status': 'success', 
+            'response': generated_response,
+            'audio': url_for('static', filename=audio_filename)
+        })
+
+    except Exception as e:
+        print(f"Error in send_message: {e}")  # Debug log
+        return jsonify({'status': 'error', 'message': str(e)})
+# @app.route('/voice_response', methods=['POST'])
+# @login_required
+# def voice_response():
+#     import uuid  # Import uuid for generating unique filenames
+
+#     data = request.json
+#     user_message = data.get('message')
+
+#     if user_message:
+#         response_text = generate_response(user_message)
+#         unique_id = uuid.uuid4().hex  # Generate a unique identifier
+#         audio_filename = f"response_{session['user']['email']}_{unique_id}.mp3"
+#         speak_text(response_text, filename=f"static/{audio_filename}")  # Generates the voice file
+#         return jsonify({'status': 'success', 'response': response_text, 'audio': url_for('static', filename=audio_filename)})
+
+#     return jsonify({'status': 'error', 'message': 'No message provided'})
+
+
+@app.route('/voice_response', methods=['POST'])
 @login_required
-def update_api_key_route():
-    new_api_key = request.form['api_key']
-    if new_api_key:
-        conn = sqlite3.connect('users.db')
-        c = conn.cursor()
-        c.execute("UPDATE users SET api_key=? WHERE email=?", (new_api_key, session['user']['email']))
-        conn.commit()
-        conn.close()
-        session['user']['api_key'] = new_api_key
-        flash('API Key updated successfully!', 'success')
-    return redirect(url_for('chat'))
+def voice_response():
+    data = request.json
+    user_message = data.get('message')
+
+    if user_message:
+        response_text = generate_response(user_message)
+        audio_filename = f"response_{session['user']['email']}.mp3"
+        speak_text(response_text, filename=f"static/{audio_filename}")  # Generates the voice file
+        return jsonify({'status': 'success', 'response': response_text, 'audio': url_for('static', filename=audio_filename)})
+
+    return jsonify({'status': 'error', 'message': 'No message provided'})
+
+# @app.route('/voice_response', methods=['POST'])
+# @login_required
+# def voice_response():
+#     data = request.json
+#     user_message = data.get('message')
+
+#     if user_message:
+#         response_text = generate_response(user_message)
+#         # Add timestamp to make filename unique
+#         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+#         audio_filename = f"response_{session['user']['email']}_{timestamp}.mp3"
+#         speak_text(response_text, filename=f"static/{audio_filename}")
+#         return jsonify({
+#             'status': 'success', 
+#             'response': response_text, 
+#             'audio': url_for('static', filename=audio_filename)
+#         })
+
+#     return jsonify({'status': 'error', 'message': 'No message provided'})
+# @app.route('/send_message', methods=['POST'])
+# @login_required
+# def send_message():
+#     data = request.json
+#     user_message = data.get('message')
+#     # prompt_template = data.get('promptTemplate', '')  # Get prompt template with empty default
+#     # print(prompt_template)
+#     prompt_template="""You are a witty and humorous assistant. Whenever I provide a word, your task is to create a clever, light-hearted, and original joke related to that word. Keep the humor fun and suitable for all audiences.
+
+#             For example:
+
+#             Word: Banana
+#             Joke: Why did the banana go to the doctor? Because it wasn’t peeling well!"""
+
+#     if not user_message:
+#         return jsonify({'status': 'error', 'message': 'No message provided'})
+
+#     try:
+#         # Construct the full message with the prompt template
+        
+#         full_message = f"{prompt_template}\n\nUser Message: {user_message}"
+
+#         llm = ChatGoogleGenerativeAI(
+#             model="gemini-1.5-pro",
+#             google_api_key=session['user']['api_key'],
+#             temperature=0.5,
+#             max_tokens=150,
+#             timeout=10,
+#             max_retries=1
+#         )
+
+#         response = llm.invoke(full_message)
+#         generated_response = response.content
+
+#         # Save chat history with the original user message
+#         save_chat_history(session['user']['email'], user_message, generated_response)
+
+#         # Generate audio response if needed
+#         audio_filename = f"response_{session['user']['email']}.mp3"
+#         speak_text(generated_response, filename=f"static/{audio_filename}")
+
+#         return jsonify({
+#             'status': 'success', 
+#             'response': generated_response,
+#             'audio': url_for('static', filename=audio_filename)
+#         })
+
+#     except Exception as e:
+#         return jsonify({'status': 'error', 'message': str(e)})
+
 
 @app.route('/logout')
 def logout():
@@ -449,3 +607,6 @@ def logout():
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
+
+
+

@@ -11,13 +11,37 @@
         <p>School: {{ user.school }}</p>
         <p>Medium: {{ user.medium }}</p>
     </div>
-
+    <div class="prompt-setting-container bg-white p-4 rounded-lg shadow-lg mb-4">
+        <h4 class="text-md font-bold mb-2">Set Prompt Template</h4>
+        <textarea 
+            id="prompt-template" 
+            class="form-input w-full h-24 mb-2" 
+            placeholder="Type your custom prompt template here...">
+        </textarea>
+        <button onclick="setPrompt()" class="btn-primary w-full">
+            <span class="flex items-center justify-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Set Prompt
+            </span>
+        </button>
+    </div>
     <div class="chat-container">
         <div class="messages-container" id="chat-messages">
             <!-- Messages will be inserted here via JavaScript -->
         </div>
-        
+
         <div class="chat-input-container">
+            
+            <button onclick="startVoiceInput()" class="btn-primary flex items-center">
+                <span class="flex items-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                    Voice
+                </span>
+            </button>
             <input 
                 type="text" 
                 id="message-input" 
@@ -28,46 +52,109 @@
             <button onclick="sendMessage()" class="btn-primary flex items-center">
                 <span class="flex items-center">
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
                     Send
                 </span>
             </button>
         </div>
     </div>
-    
-    <div class="mt-8 bg-white rounded-lg shadow-lg p-6">
-        <div class="flex items-center mb-4">
-            <svg class="w-6 h-6 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
-            </svg>
-            <h3 class="text-lg font-bold text-gray-900">API Key Management</h3>
-        </div>
-        <form action="{{ url_for('update_api_key_route') }}" method="POST" class="flex space-x-4">
-            <input 
-                type="password" 
-                name="api_key" 
-                class="form-input flex-1" 
-                placeholder="Enter new API key"
-            >
-            <button type="submit" class="btn-primary bg-green-600 hover:bg-green-700">
-                <span class="flex items-center">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                    </svg>
-                    Update Key
-                </span>
-            </button>
-        </form>
-    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+    // Global variables
+ // Global variables
+let recognition = null;
 const chatMessages = document.getElementById('chat-messages');
 const messageInput = document.getElementById('message-input');
+let currentPrompt = ''; // Store the current prompt template
 
+// Speech Recognition Initialization
+function initializeSpeechRecognition() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+        return null;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognitionInstance = new SpeechRecognition();
+
+    recognitionInstance.continuous = false;
+    recognitionInstance.interimResults = false;
+    recognitionInstance.lang = 'en-US';
+
+    return recognitionInstance;
+}
+
+// Voice Input Handler
+async function startVoiceInput() {
+    if (!recognition) {
+        recognition = initializeSpeechRecognition();
+        if (!recognition) return;
+    }
+
+    // Visual feedback that recording has started
+    const voiceButton = document.querySelector('button[onclick="startVoiceInput()"]');
+    voiceButton.classList.add('recording');
+    voiceButton.innerHTML = `
+        <span class="flex items-center">
+            <svg class="w-5 h-5 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="6" fill="currentColor"/>
+            </svg>
+            Recording...
+        </span>
+    `;
+
+    recognition.onstart = () => {
+        console.log('Voice recognition started...');
+    };
+
+    recognition.onend = () => {
+        console.log('Voice recognition ended');
+        resetVoiceButton(voiceButton);
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Voice recognition error:', event.error);
+        appendMessage('Voice recognition error: ' + event.error, false);
+        recognition.stop();
+    };
+
+    recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
+        console.log('Recognized text:', transcript);
+
+        // Display recognized text in input field
+        messageInput.value = transcript;
+
+        // Automatically send the message
+        await sendMessage();
+    };
+
+    try {
+        await recognition.start();
+    } catch (error) {
+        console.error('Error starting recognition:', error);
+        appendMessage('Failed to start voice recognition. Please try again.', false);
+    }
+}
+
+// Reset voice button to default state
+function resetVoiceButton(button) {
+    button.classList.remove('recording');
+    button.innerHTML = `
+        <span class="flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+            Voice
+        </span>
+    `;
+}
+
+// UI Helper Functions
 function createLoadingIndicator() {
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'message message-bot flex items-center space-x-2';
@@ -81,14 +168,49 @@ function createLoadingIndicator() {
     return loadingDiv;
 }
 
-function appendMessage(content, isUser) {
+function appendMessage(content, isUser, audioUrl = null) {
     const messageDiv = document.createElement('div');
     messageDiv.className = isUser ? 'message message-user' : 'message message-bot';
-    messageDiv.textContent = content;
+    messageDiv.innerHTML = `<p>${content}</p>`;
+
+    if (audioUrl) {
+        const audioButton = document.createElement('button');
+        audioButton.className = 'audio-button flex items-center mt-2';
+        audioButton.innerHTML = `
+            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.868v4.264a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.341A8 8 0 1115 4.77m4.428 10.571a8.003 8.003 0 010-10.571m4.428 5.286A8.001 8.001 0 0115 19.23" />
+            </svg>
+            Play Audio
+        `;
+        audioButton.onclick = () => playAudio(audioUrl);
+        messageDiv.appendChild(audioButton);
+    }
+
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+function playAudio(audioUrl) {
+    const audio = new Audio(audioUrl);
+    audio.play();
+}
+
+// Prompt Handling
+function setPrompt() {
+    const promptInput = document.getElementById('prompt-template');
+    currentPrompt = promptInput.value.trim();
+    
+    if (!currentPrompt) {
+        alert('Please enter a valid prompt template.');
+        return;
+    }
+    
+    console.log('Set prompt template:', currentPrompt); // Debug log
+    alert('Prompt template set successfully!');
+}
+
+// Message Handling
 async function sendMessage() {
     const message = messageInput.value.trim();
     if (!message) return;
@@ -105,41 +227,50 @@ async function sendMessage() {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
     try {
+        console.log('Sending message with prompt:', currentPrompt); // Debug log
         const response = await fetch('/send_message', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ message })
+            body: JSON.stringify({ 
+                message: message,
+                promptTemplate: currentPrompt // Send the stored prompt template
+            })
         });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
         const data = await response.json();
         
         // Remove loading indicator
         loadingIndicator.remove();
-        
+
         if (data.status === 'success') {
-            appendMessage(data.response, false);
+            appendMessage(data.response, false, data.audio);
         } else {
             appendMessage('Error: ' + data.message, false);
         }
     } catch (error) {
-        // Remove loading indicator
+        console.error('Error:', error);
         loadingIndicator.remove();
         appendMessage('Failed to get response. Please try again.', false);
     }
 }
 
-// Handle Enter key
-messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        sendMessage();
-    }
-});
-
-// Focus input on page load
+// Event Listeners
 window.addEventListener('load', () => {
     messageInput.focus();
 });
-</script>
+
+// Add event listener for Enter key in message input
+messageInput.addEventListener('keypress', function(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+    }
+});
+    </script>
 {% endblock %}
