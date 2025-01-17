@@ -11,6 +11,31 @@
         <p>School: {{ user.school }}</p>
         <p>Medium: {{ user.medium }}</p>
     </div>
+
+    <!-- Add the Update API Key section here -->
+<div class="update-api-key bg-gray-100 p-4 rounded-lg mb-4">
+    <h4 class="text-md font-bold mb-2">Update API Key</h4>
+    <form action="/update_api_key" method="post" class="flex flex-col space-y-2">
+        <label for="api-key" class="text-sm">New API Key:</label>
+        <input 
+            type="text" 
+            id="api-key" 
+            name="api_key" 
+            class="form-input w-full" 
+            placeholder="Enter your new API key..." 
+            required
+        >
+        <button type="submit" class="btn-primary w-full">
+            <span class="flex items-center justify-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Update API Key
+            </span>
+        </button>
+    </form>
+</div>
+
     <div class="prompt-setting-container bg-white p-4 rounded-lg shadow-lg mb-4">
         <h4 class="text-md font-bold mb-2">Set Prompt Template</h4>
         <textarea 
@@ -65,212 +90,218 @@
 {% block scripts %}
 <script>
     // Global variables
- // Global variables
-let recognition = null;
-const chatMessages = document.getElementById('chat-messages');
-const messageInput = document.getElementById('message-input');
-let currentPrompt = ''; // Store the current prompt template
+    let recognition = null;
+    const chatMessages = document.getElementById('chat-messages');
+    const messageInput = document.getElementById('message-input');
+    let currentPrompt = ''; // Store the current prompt template
 
-// Speech Recognition Initialization
-function initializeSpeechRecognition() {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
-        return null;
+    // Speech Recognition Initialization
+    function initializeSpeechRecognition() {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+            return null;
+        }
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognitionInstance = new SpeechRecognition();
+
+        recognitionInstance.continuous = false;
+        recognitionInstance.interimResults = false;
+        recognitionInstance.lang = 'en-US';
+
+        return recognitionInstance;
     }
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognitionInstance = new SpeechRecognition();
+    // Voice Input Handler
+    async function startVoiceInput() {
+        if (!recognition) {
+            recognition = initializeSpeechRecognition();
+            if (!recognition) return;
+        }
 
-    recognitionInstance.continuous = false;
-    recognitionInstance.interimResults = false;
-    recognitionInstance.lang = 'en-US';
-
-    return recognitionInstance;
-}
-
-// Voice Input Handler
-async function startVoiceInput() {
-    if (!recognition) {
-        recognition = initializeSpeechRecognition();
-        if (!recognition) return;
-    }
-
-    // Visual feedback that recording has started
-    const voiceButton = document.querySelector('button[onclick="startVoiceInput()"]');
-    voiceButton.classList.add('recording');
-    voiceButton.innerHTML = `
-        <span class="flex items-center">
-            <svg class="w-5 h-5 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="6" fill="currentColor"/>
-            </svg>
-            Recording...
-        </span>
-    `;
-
-    recognition.onstart = () => {
-        console.log('Voice recognition started...');
-    };
-
-    recognition.onend = () => {
-        console.log('Voice recognition ended');
-        resetVoiceButton(voiceButton);
-    };
-
-    recognition.onerror = (event) => {
-        console.error('Voice recognition error:', event.error);
-        appendMessage('Voice recognition error: ' + event.error, false);
-        recognition.stop();
-    };
-
-    recognition.onresult = async (event) => {
-        const transcript = event.results[0][0].transcript;
-        console.log('Recognized text:', transcript);
-
-        // Display recognized text in input field
-        messageInput.value = transcript;
-
-        // Automatically send the message
-        await sendMessage();
-    };
-
-    try {
-        await recognition.start();
-    } catch (error) {
-        console.error('Error starting recognition:', error);
-        appendMessage('Failed to start voice recognition. Please try again.', false);
-    }
-}
-
-// Reset voice button to default state
-function resetVoiceButton(button) {
-    button.classList.remove('recording');
-    button.innerHTML = `
-        <span class="flex items-center">
-            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
-            Voice
-        </span>
-    `;
-}
-
-// UI Helper Functions
-function createLoadingIndicator() {
-    const loadingDiv = document.createElement('div');
-    loadingDiv.className = 'message message-bot flex items-center space-x-2';
-    loadingDiv.innerHTML = `
-        <div class="loading-dots">
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-        </div>
-    `;
-    return loadingDiv;
-}
-
-function appendMessage(content, isUser, audioUrl = null) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = isUser ? 'message message-user' : 'message message-bot';
-    messageDiv.innerHTML = `<p>${content}</p>`;
-
-    if (audioUrl) {
-        const audioButton = document.createElement('button');
-        audioButton.className = 'audio-button flex items-center mt-2';
-        audioButton.innerHTML = `
-            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.868v4.264a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.341A8 8 0 1115 4.77m4.428 10.571a8.003 8.003 0 010-10.571m4.428 5.286A8.001 8.001 0 0115 19.23" />
-            </svg>
-            Play Audio
+        // Visual feedback for recording state
+        const voiceButton = document.querySelector('button[onclick="startVoiceInput()"]');
+        voiceButton.classList.add('recording');
+        voiceButton.innerHTML = `
+            <span class="flex items-center">
+                <svg class="w-5 h-5 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="6" fill="currentColor"/>
+                </svg>
+                Recording...
+            </span>
         `;
-        audioButton.onclick = () => playAudio(audioUrl);
-        messageDiv.appendChild(audioButton);
-    }
 
-    chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-}
+        recognition.onstart = () => {
+            console.log('Voice recognition started...');
+        };
 
-function playAudio(audioUrl) {
-    const audio = new Audio(audioUrl);
-    audio.play();
-}
+        recognition.onend = () => {
+            console.log('Voice recognition ended');
+            resetVoiceButton(voiceButton);
+        };
 
-// Prompt Handling
-function setPrompt() {
-    const promptInput = document.getElementById('prompt-template');
-    currentPrompt = promptInput.value.trim();
-    
-    if (!currentPrompt) {
-        alert('Please enter a valid prompt template.');
-        return;
-    }
-    
-    console.log('Set prompt template:', currentPrompt); // Debug log
-    alert('Prompt template set successfully!');
-}
+        recognition.onerror = (event) => {
+            console.error('Voice recognition error:', event.error);
+            appendMessage('Voice recognition error: ' + event.error, false);
+            recognition.stop();
+        };
 
-// Message Handling
-async function sendMessage() {
-    const message = messageInput.value.trim();
-    if (!message) return;
+        recognition.onresult = async (event) => {
+            const transcript = event.results[0][0].transcript;
+            console.log('Recognized text:', transcript);
 
-    // Clear input
-    messageInput.value = '';
+            // Display recognized text in input field
+            messageInput.value = transcript;
 
-    // Add user message
-    appendMessage(message, true);
+            // Automatically send the message
+            await sendMessage();
+        };
 
-    // Add loading indicator
-    const loadingIndicator = createLoadingIndicator();
-    chatMessages.appendChild(loadingIndicator);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-
-    try {
-        console.log('Sending message with prompt:', currentPrompt); // Debug log
-        const response = await fetch('/send_message', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ 
-                message: message,
-                promptTemplate: currentPrompt // Send the stored prompt template
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        try {
+            await recognition.start();
+        } catch (error) {
+            console.error('Error starting recognition:', error);
+            appendMessage('Failed to start voice recognition. Please try again.', false);
         }
+    }
 
-        const data = await response.json();
-        
-        // Remove loading indicator
-        loadingIndicator.remove();
+    // Reset voice button to default state
+    function resetVoiceButton(button) {
+        button.classList.remove('recording');
+        button.innerHTML = `
+            <span class="flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+                Voice
+            </span>
+        `;
+    }
 
-        if (data.status === 'success') {
-            appendMessage(data.response, false, data.audio);
+    // Text-to-Speech with Web Speech API
+    function speakText(text) {
+        if ('speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US'; // Set language
+            utterance.rate = 1; // Speed
+            utterance.pitch = 1; // Pitch
+            utterance.volume = 1; // Volume
+
+            // Debug events
+            utterance.onstart = () => console.log('Speech synthesis started.');
+            utterance.onend = () => console.log('Speech synthesis ended.');
+            utterance.onerror = (event) => console.error('Speech synthesis error:', event.error);
+
+            speechSynthesis.speak(utterance);
         } else {
-            appendMessage('Error: ' + data.message, false);
+            console.error('Text-to-speech is not supported in this browser.');
+            appendMessage('Text-to-speech is not supported in this browser.', false);
         }
-    } catch (error) {
-        console.error('Error:', error);
-        loadingIndicator.remove();
-        appendMessage('Failed to get response. Please try again.', false);
     }
-}
 
-// Event Listeners
-window.addEventListener('load', () => {
-    messageInput.focus();
-});
-
-// Add event listener for Enter key in message input
-messageInput.addEventListener('keypress', function(event) {
-    if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
-        sendMessage();
+    // UI Helper Functions
+    function createLoadingIndicator() {
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message message-bot flex items-center space-x-2';
+        loadingDiv.innerHTML = `
+            <div class="loading-dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+        `;
+        return loadingDiv;
     }
-});
-    </script>
+
+    function appendMessage(content, isUser) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = isUser ? 'message message-user' : 'message message-bot';
+        messageDiv.innerHTML = `<p>${content}</p>`;
+
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        // Play TTS only for bot messages
+        if (!isUser) {
+            speakText(content);
+        }
+    }
+
+    // Prompt Handling
+    function setPrompt() {
+        const promptInput = document.getElementById('prompt-template');
+        currentPrompt = promptInput.value.trim();
+
+        if (!currentPrompt) {
+            alert('Please enter a valid prompt template.');
+            return;
+        }
+
+        console.log('Set prompt template:', currentPrompt); // Debug log
+        alert('Prompt template set successfully!');
+    }
+
+    // Message Handling
+    async function sendMessage() {
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        // Clear input
+        messageInput.value = '';
+
+        // Add user message
+        appendMessage(message, true);
+
+        // Add loading indicator
+        const loadingIndicator = createLoadingIndicator();
+        chatMessages.appendChild(loadingIndicator);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        try {
+            console.log('Sending message with prompt:', currentPrompt); // Debug log
+            const response = await fetch('/send_message', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    message: message,
+                    promptTemplate: currentPrompt // Send the stored prompt template
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            // Remove loading indicator
+            loadingIndicator.remove();
+
+            if (data.status === 'success') {
+                appendMessage(data.response, false);
+            } else {
+                appendMessage('Error: ' + data.message, false);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            loadingIndicator.remove();
+            appendMessage('Failed to get response. Please try again.', false);
+        }
+    }
+
+    // Event Listeners
+    window.addEventListener('load', () => {
+        messageInput.focus();
+    });
+
+    // Add event listener for Enter key in message input
+    messageInput.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    });
+</script>
 {% endblock %}

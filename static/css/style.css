@@ -231,3 +231,36 @@ nav {
         max-width: 90%;
     }
 }
+
+.audio-icon {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.icon-circle {
+    width: 12px;
+    height: 12px;
+    background-color: #000;
+    border-radius: 50%;
+    position: absolute;
+    top: 6px;
+    left: 2px;
+}
+
+.icon-lines {
+    position: absolute;
+    top: 6px;
+    left: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 12px;
+}
+
+.icon-lines .line {
+    width: 8px;
+    height: 2px;
+    background-color: #000;
+}
